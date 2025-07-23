@@ -3,7 +3,7 @@ import os
 from datetime import datetime, timezone
 
 APP_KEY = os.getenv("RUNRUN_APP_KEY")
-USER_TOKEN = os.getenv("RUNRUN_USER_TOKEN")  # Corrigido aqui
+USER_TOKEN = os.getenv("RUNRUN_USER_TOKEN")
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
@@ -19,7 +19,9 @@ def get_users():
     if response.status_code != 200:
         print("Erro ao buscar usuários:", response.text)
         return {}
-    users = response.json()
+    users_data = response.json()
+    # Supondo que a lista de usuários esteja em "data"
+    users = users_data.get("data", users_data)
     return {user["id"]: user["name"] for user in users}
 
 def get_today_tasks():
@@ -29,8 +31,10 @@ def get_today_tasks():
     if response.status_code != 200:
         print("Erro ao buscar tarefas:", response.text)
         return []
-    tasks = response.json()
-    # Filtro para apenas tarefas com status != "Entregue"
+    tasks_data = response.json()
+    # Considera lista dentro de "data"
+    tasks = tasks_data.get("data", tasks_data)
+    # Filtra tarefas que NÃO estejam com status "delivered"
     return [task for task in tasks if task.get("status") != "delivered"]
 
 def send_to_telegram(message):
@@ -45,7 +49,6 @@ def send_to_telegram(message):
         print("Erro ao enviar mensagem para o Telegram:", response.text)
 
 def split_and_send_message(full_message, max_length=4096):
-    # Divide a mensagem em blocos menores e envia um por um
     while len(full_message) > max_length:
         split_point = full_message.rfind('\n', 0, max_length)
         if split_point == -1:
@@ -65,8 +68,10 @@ def main():
 
     message = "<b>Tarefas para hoje:</b>\n\n"
     for task in tasks:
-        title = task.get("name") or "Sem título"
-        responsible_id = task.get("responsible_id")
+        # O título pode estar em "name" ou "title"
+        title = task.get("name") or task.get("title") or "Sem título"
+        # Runrun.it geralmente usa "user_id" para responsável
+        responsible_id = task.get("user_id")
         responsible = user_dict.get(responsible_id, "Desconhecido")
         due_date = task.get("due_date") or "Sem data"
         message += f"📌 <b>{title}</b>\n👤 Responsável: {responsible}\n📅 Vencimento: {due_date}\n\n"
