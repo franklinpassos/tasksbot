@@ -1,0 +1,28 @@
+name: Enviar tarefas do dia para o Telegram
+
+on:
+  schedule:
+    - cron: '00 22 * * *'  # 19h no Brasil = 22h UTC
+  workflow_dispatch:
+
+jobs:
+  enviar_mensagem:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Instalar dependências
+        run: pip install requests
+
+      - name: Executar script
+        env:
+          RUNRUN_APP_KEY: ${{ secrets.RUNRUN_APP_KEY }}
+          RUNRUN_USER_TOKEN: ${{ secrets.RUNRUN_USER_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python runrun_telegram_report.py
