@@ -22,11 +22,7 @@ def get_users():
         return {}
 
     users_data = response.json()
-    if isinstance(users_data, dict):
-        users = users_data.get("data", [])
-    else:
-        users = users_data
-
+    users = users_data.get("data", []) if isinstance(users_data, dict) else users_data
     return {user["id"]: user["name"] for user in users}
 
 def parse_iso_datetime(date_str):
@@ -53,10 +49,7 @@ def get_today_tasks():
         return []
 
     tasks_data = response.json()
-    if isinstance(tasks_data, dict):
-        tasks = tasks_data.get("data", [])
-    else:
-        tasks = tasks_data
+    tasks = tasks_data.get("data", []) if isinstance(tasks_data, dict) else tasks_data
 
     filtered_tasks = []
     for task in tasks:
@@ -96,10 +89,6 @@ def split_and_send_message(full_message, max_length=4096):
 def main():
     user_dict = get_users()
     tasks = get_today_tasks()
-    
-    import json
-    print(json.dumps(tasks[0], indent=2))
-    exit()
 
     if not tasks:
         send_to_telegram("✅ Nenhuma tarefa agendada para hoje.")
@@ -107,7 +96,7 @@ def main():
 
     message = "<b>Tarefas para hoje:</b>\n\n"
     for task in tasks:
-        title = task.get("name") or task.get("title") or "Sem título"
+        title = task.get("title", "Sem título")
         responsible_id = task.get("user_id")
         responsible = user_dict.get(responsible_id, "Desconhecido")
         task_id = task.get("id")
