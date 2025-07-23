@@ -32,11 +32,9 @@ def get_users():
 
 def parse_iso_datetime(date_str):
     try:
-        dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+        dt = datetime.fromisoformat(date_str)
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=pytz.UTC)
-        else:
-            dt = dt.astimezone(pytz.UTC)
         return dt
     except Exception:
         return None
@@ -70,8 +68,7 @@ def get_all_tasks():
 def get_today_tasks():
     brt = pytz.timezone("America/Sao_Paulo")
     now_brt = datetime.now(tz=brt)
-    today = now_brt.date()  # só a data, sem hora
-    tomorrow = today + timedelta(days=1)
+    today_date = now_brt.date()
 
     all_tasks = get_all_tasks()
     print(f"Total tarefas obtidas: {len(all_tasks)}")
@@ -84,8 +81,11 @@ def get_today_tasks():
         desired_date = parse_iso_datetime(desired_date_str)
         if not desired_date:
             continue
-        desired_date_brt = desired_date.astimezone(brt).date()  # só a data, sem hora
-        if today == desired_date_brt and task.get("status") != "delivered":
+
+        # Não converte para timezone novamente, só pega a data local do datetime com fuso
+        desired_date_local = desired_date.date()
+
+        if desired_date_local == today_date and task.get("status") != "delivered":
             filtered_tasks.append(task)
 
     print(f"Total tarefas filtradas para hoje: {len(filtered_tasks)}")
