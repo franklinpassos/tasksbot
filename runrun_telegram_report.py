@@ -104,22 +104,18 @@ def main():
     message = "<b>Tarefas para hoje:</b>\n\n"
     for task in tasks:
         title = task.get("name") or task.get("title") or "Sem título"
-
-        # Tentativa 1: campo "responsible_id"
-        responsible_id = task.get("responsible_id")
-        # Tentativa 2: campo "user_id" se não achar "responsible_id"
-        if not responsible_id:
-            responsible_id = task.get("user_id")
-
-        # Debug: printar IDs que não foram encontrados
-        if responsible_id not in user_dict:
-            print(f"Responsável ID {responsible_id} não encontrado entre usuários.")
-
+        responsible_id = task.get("user_id")
         responsible = user_dict.get(responsible_id, "Desconhecido")
-
         task_id = task.get("id")
         task_url = f"https://runrun.it/tasks/{task_id}" if task_id else "URL indisponível"
-        message += f"📌 <b>{title}</b>\n👤 Responsável: {responsible}\n🔗 <a href=\"{task_url}\">Abrir tarefa</a>\n\n"
+        project_name = task.get("project", {}).get("name", "Projeto não identificado")
+
+        message += (
+            f"📌 <b>{title}</b>\n"
+            f"👤 Responsável: {responsible}\n"
+            f"📂 Projeto: {project_name}\n"
+            f"🔗 <a href=\"{task_url}\">Abrir tarefa</a>\n\n"
+        )
 
     split_and_send_message(message)
 
