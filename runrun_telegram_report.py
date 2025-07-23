@@ -29,21 +29,6 @@ def get_users():
 
     return {user["id"]: user["name"] for user in users}
 
-def get_projects():
-    url = "https://runrun.it/api/v1.0/projects"
-    response = requests.get(url, headers=HEADERS)
-    if response.status_code != 200:
-        print("Erro ao buscar projetos:", response.text)
-        return {}
-
-    projects_data = response.json()
-    if isinstance(projects_data, dict):
-        projects = projects_data.get("data", [])
-    else:
-        projects = projects_data
-
-    return {project["id"]: project["name"] for project in projects}
-
 def parse_iso_datetime(date_str):
     try:
         dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
@@ -82,7 +67,10 @@ def get_today_tasks():
         if not desired_date:
             continue
         desired_date_brt = desired_date.astimezone(brt)
-        if today <= desired_date_brt < tomorrow and task.get("status") != "delivered":
+        # Normaliza para o início do dia (00:00)
+        desired_date_brt_day = desired_date_brt.replace(hour=0, minute=0, second=0, microsecond=0)
+        # Filtra: desired_date menor que amanhã (exclui amanhã em diante)
+        if desired_date_brt_day < tomorrow and task.get("status") != "delivered":
             filtered_tasks.append(task)
 
     return filtered_tasks
@@ -110,7 +98,6 @@ def split_and_send_message(full_message, max_length=4096):
 
 def main():
     user_dict = get_users()
-    project_dict = get_projects()
     tasks = get_today_tasks()
 
     if not tasks:
@@ -119,20 +106,9 @@ def main():
 
     message = "<b>Tarefas para hoje:</b>\n\n"
     for task in tasks:
-        title = task.get("name") or task.get("title") or "Sem título"
-
-        # Responsável: tenta pegar direto da task, depois no dicionário, senão desconhecido
-        responsible = task.get("responsible_name")
-        if not responsible:
-            responsible_id = task.get("user_id") or task.get("responsible_id")
-            responsible = user_dict.get(responsible_id, "Desconhecido")
-
-        # Projeto: tenta pegar direto da task, depois no dicionário, senão "Projeto não identificado"
-        project_name = task.get("project_name")
-        if not project_name:
-            project_id = task.get("project_id")
-            project_name = project_dict.get(project_id, "Projeto não identificado")
-
+        title = task.get("title") or task.get("name") or "Sem título"
+        responsible = task.get("responsible_name") or "Desconhecido"
+        project_name = task.get("project_name") or "Projeto não identificado"
         task_id = task.get("id")
         task_url = f"https://runrun.it/tasks/{task_id}" if task_id else "URL indisponível"
 
