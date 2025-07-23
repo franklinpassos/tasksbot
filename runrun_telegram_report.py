@@ -3,7 +3,7 @@ import os
 from datetime import datetime, timezone
 
 APP_KEY = os.getenv("RUNRUN_APP_KEY")
-USER_TOKEN = os.getenv("RUNRUN_USER_TOKEN")
+USER_TOKEN = os.getenv("USER_TOKEN")
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
@@ -12,8 +12,6 @@ HEADERS = {
     "User-Token": USER_TOKEN,
     "Content-Type": "application/json"
 }
-
-MAX_LENGTH = 4096  # Limite de caracteres do Telegram
 
 def get_users():
     url = "https://runrun.it/api/v1.0/users"
@@ -35,50 +33,61 @@ def get_today_tasks():
 
 def send_to_telegram(message):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": CHAT_ID,
+        "text": message,
+        "parse_mode": "HTML"
+    }
+    response = requests.post(url, json=payload)
+    if response.status_code != 200:
+        print("Erro ao enviar mensagem para o Telegram:", response.text)
 
-    # Envia mensagem em blocos de no máximo 4096 caracteres
-    for i in range(0, len(message), MAX_LENGTH):
-        chunk = message[i:i+MAX_LENGTH]
-        payload = {
-            "chat_id": CHAT_ID,
-            "text": chunk,
-            "parse_mode": "HTML"
-        }
-        response = requests.post(url, json=payload)
-        if response.status_code != 200:
-            print("Erro ao enviar mensagem para o Telegram:", response.text)
+def dividir_mensagem(texto, limite=4000):
+    partes = []
+    while len(texto) > limite:
+        corte = texto.rfind("\n", 0, limite)
+        if corte == -1:
+            corte = limite
+        partes.append(texto[:corte])
+        texto = texto[corte:]
+    partes.append(texto)
+    return partes
 
 def main():
     user_dict = get_users()
     tasks = get_today_tasks()
 
-    if not tasks:
-        send_to_telegram("✅ Nenhuma tarefa agendada para hoje.")
+    # Filtrar tarefas com status diferente de "delivered" ou "completed"
+    tarefas_nao_entregues = [
+        task for task in tasks
+        if task.get("status") not in ["delivered", "completed"]
+    ]
+
+    if not tarefas_nao_entregues:
+        send_to_telegram("✅ Nenhuma tarefa *não entregue* agendada para hoje.")
         return
 
-    header = "<b>Tarefas para hoje:</b>\n\n"
-    message_parts = [header]
-    current_part = header
+    message = "<b>Tarefas não entregues para hoje:</b>\n\n"
+    for task in tarefas_nao_entregues:
+        title = task.get("subject", "Sem título")
 
-    for task in tasks:
-        title = task.get("name", "Sem título")
         responsible_id = task.get("responsible_id")
         responsible = user_dict.get(responsible_id, "Desconhecido")
-        due_date = task.get("due_date", "Sem data")
 
-        task_text = f"📌 <b>{title}</b>\n👤 Responsável: {responsible}\n📅 Vencimento: {due_date}\n\n"
-
-        # Verifica se adicionando essa tarefa estoura o limite
-        if len(current_part) + len(task_text) > MAX_LENGTH:
-            message_parts.append(task_text)
-            current_part = task_text
+        raw_due_date = task.get("due_date") or task.get("deadline")
+        if raw_due_date:
+            try:
+                due_date = datetime.strptime(raw_due_date, "%Y-%m-%d").strftime("%d/%m/%Y")
+            except:
+                due_date = raw_due_date
         else:
-            message_parts[-1] += task_text
-            current_part = message_parts[-1]
+            due_date = "Sem data"
 
-    # Envia todos os blocos
-    for part in message_parts:
-        send_to_telegram(part)
+        message += f"📌 <b>{title}</b>\n👤 Responsável: {responsible}\n📅 Vencimento: {due_date}\n\n"
+
+    partes = dividir_mensagem(message)
+    for parte in partes:
+        send_to_telegram(parte)
 
 if __name__ == "__main__":
     if not all([APP_KEY, USER_TOKEN, BOT_TOKEN, CHAT_ID]):
