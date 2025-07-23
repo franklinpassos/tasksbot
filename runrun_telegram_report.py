@@ -27,11 +27,24 @@ if response.status_code != 200:
 tasks = response.json()
 tarefas_abertas = [t for t in tasks if not t.get("completed_at")]
 
+def obter_responsavel(tarefa):
+    # Tenta pegar o responsável por vários campos possíveis
+    if tarefa.get("user") and tarefa["user"].get("name"):
+        return tarefa["user"]["name"]
+    elif tarefa.get("assignee") and tarefa["assignee"].get("name"):
+        return tarefa["assignee"]["name"]
+    elif tarefa.get("assigned_to") and tarefa["assigned_to"].get("name"):
+        return tarefa["assigned_to"]["name"]
+    elif tarefa.get("allocated_user") and tarefa["allocated_user"].get("name"):
+        return tarefa["allocated_user"]["name"]
+    else:
+        return "Desconhecido"
+
 if tarefas_abertas:
     mensagem = f"📋 *Tarefas com entrega para hoje ({today}):*\n\n"
     for t in tarefas_abertas:
         nome = t.get("name") or t.get("title") or "Sem nome"
-        responsavel = t.get("user", {}).get("name", "Desconhecido")
+        responsavel = obter_responsavel(t)
         mensagem += f"- {nome} (Responsável: {responsavel})\n"
 else:
     mensagem = f"✅ Nenhuma tarefa com entrega para hoje ({today})."
