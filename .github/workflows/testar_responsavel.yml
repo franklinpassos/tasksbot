@@ -1,7 +1,7 @@
 name: Testar campo responsável Runrun.it
 
 on:
-  workflow_dispatch:  # permite rodar manualmente pelo GitHub
+  workflow_dispatch:
 
 jobs:
   testar_responsavel:
