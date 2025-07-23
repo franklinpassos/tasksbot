@@ -2,12 +2,14 @@ name: Enviar tarefas do dia para o Telegram
 
 on:
   schedule:
-    - cron: '00 22 * * *'  # 19h no Brasil = 22h UTC
+    # Roda todo dia às 19h Brasília (22h UTC)
+    - cron: '0 22 * * *'
   workflow_dispatch:
 
 jobs:
   enviar_mensagem:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v3
 
