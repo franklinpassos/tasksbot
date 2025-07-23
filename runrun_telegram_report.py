@@ -22,7 +22,6 @@ def get_users():
 
     users_data = response.json()
 
-    # Se for lista, use diretamente, se for dict, pegue 'data'
     if isinstance(users_data, dict):
         users = users_data.get("data", [])
     else:
@@ -81,8 +80,9 @@ def main():
         title = task.get("name") or task.get("title") or "Sem título"
         responsible_id = task.get("user_id")
         responsible = user_dict.get(responsible_id, "Desconhecido")
-        due_date = task.get("due_date") or "Sem data"
-        message += f"📌 <b>{title}</b>\n👤 Responsável: {responsible}\n📅 Vencimento: {due_date}\n\n"
+        task_id = task.get("id")
+        task_url = f"https://runrun.it/tasks/{task_id}" if task_id else "URL indisponível"
+        message += f"📌 <b>{title}</b>\n👤 Responsável: {responsible}\n🔗 <a href=\"{task_url}\">Abrir tarefa</a>\n\n"
 
     split_and_send_message(message)
 
