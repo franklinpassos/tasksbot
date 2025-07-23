@@ -19,9 +19,15 @@ def get_users():
     if response.status_code != 200:
         print("Erro ao buscar usuários:", response.text)
         return {}
+
     users_data = response.json()
-    # Supondo que a lista de usuários esteja em "data"
-    users = users_data.get("data", users_data)
+
+    # Se for lista, use diretamente, se for dict, pegue 'data'
+    if isinstance(users_data, dict):
+        users = users_data.get("data", [])
+    else:
+        users = users_data
+
     return {user["id"]: user["name"] for user in users}
 
 def get_today_tasks():
@@ -31,10 +37,14 @@ def get_today_tasks():
     if response.status_code != 200:
         print("Erro ao buscar tarefas:", response.text)
         return []
+
     tasks_data = response.json()
-    # Considera lista dentro de "data"
-    tasks = tasks_data.get("data", tasks_data)
-    # Filtra tarefas que NÃO estejam com status "delivered"
+
+    if isinstance(tasks_data, dict):
+        tasks = tasks_data.get("data", [])
+    else:
+        tasks = tasks_data
+
     return [task for task in tasks if task.get("status") != "delivered"]
 
 def send_to_telegram(message):
@@ -68,9 +78,7 @@ def main():
 
     message = "<b>Tarefas para hoje:</b>\n\n"
     for task in tasks:
-        # O título pode estar em "name" ou "title"
         title = task.get("name") or task.get("title") or "Sem título"
-        # Runrun.it geralmente usa "user_id" para responsável
         responsible_id = task.get("user_id")
         responsible = user_dict.get(responsible_id, "Desconhecido")
         due_date = task.get("due_date") or "Sem data"
