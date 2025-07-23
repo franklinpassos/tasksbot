@@ -1,6 +1,6 @@
 import requests
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 APP_KEY = os.getenv("RUNRUN_APP_KEY")
 USER_TOKEN = os.getenv("RUNRUN_USER_TOKEN")
@@ -28,9 +28,19 @@ def get_users():
 
     return {user["id"]: user["name"] for user in users}
 
+def parse_iso_datetime(date_str):
+    # Tenta converter string ISO 8601 para datetime com timezone UTC
+    try:
+        return datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+    except Exception:
+        return None
+
 def get_today_tasks():
-    today = datetime.now(timezone.utc).date().isoformat()
-    url = f"https://runrun.it/api/v1.0/tasks"  # Buscar todas as tasks (sem filtro na URL)
+    now = datetime.now(timezone.utc)
+    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    tomorrow = today + timedelta(days=1)
+
+    url = f"https://runrun.it/api/v1.0/tasks"
     response = requests.get(url, headers=HEADERS)
     if response.status_code != 200:
         print("Erro ao buscar tarefas:", response.text)
@@ -42,13 +52,20 @@ def get_today_tasks():
     else:
         tasks = tasks_data
 
-    # Filtra tarefas que:
-    # 1) Não estejam entregues
-    # 2) Tenham desired_date igual a today
-    filtered_tasks = [
-        task for task in tasks
-        if task.get("status") != "delivered" and task.get("desired_date") == today
-    ]
+    filtered_tasks = []
+    for task in tasks:
+        if task.get("status") == "delivered":
+            continue
+        desired_date_str = task.get("desired_date")
+        if not desired_date_str:
+            continue
+        desired_date = parse_iso_datetime(desired_date_str)
+        if not desired_date:
+            continue
+        # Filtra desired_date >= hoje 0h UTC e < amanhã 0h UTC
+        if today <= desired_date < tomorrow:
+            filtered_tasks.append(task)
+
     return filtered_tasks
 
 def send_to_telegram(message):
