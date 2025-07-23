@@ -2,10 +2,8 @@ name: Enviar tarefas do dia para o Telegram
 
 on:
   schedule:
-    # Roda todo dia às 16h15 BRT (19h15 UTC)
-    - cron: '15 19 * * *'
-    # Roda todo dia às 19h00 BRT (22h00 UTC)
-    - cron: '0 22 * * *'
+    - cron: '30 19 * * *'  # 16:30 BRT
+    - cron: '0 22 * * *'   # 19:00 BRT
   workflow_dispatch:
 
 jobs:
