@@ -70,7 +70,7 @@ def get_all_tasks():
 def get_today_tasks():
     brt = pytz.timezone("America/Sao_Paulo")
     now_brt = datetime.now(tz=brt)
-    today = now_brt.replace(hour=0, minute=0, second=0, microsecond=0)
+    today = now_brt.date()  # só a data, sem hora
     tomorrow = today + timedelta(days=1)
 
     all_tasks = get_all_tasks()
@@ -84,9 +84,8 @@ def get_today_tasks():
         desired_date = parse_iso_datetime(desired_date_str)
         if not desired_date:
             continue
-        desired_date_brt = desired_date.astimezone(brt)
-        # Apenas desired_date < tomorrow (menor que amanhã), não inclui amanhã
-        if today <= desired_date_brt < tomorrow and task.get("status") != "delivered":
+        desired_date_brt = desired_date.astimezone(brt).date()  # só a data, sem hora
+        if today == desired_date_brt and task.get("status") != "delivered":
             filtered_tasks.append(task)
 
     print(f"Total tarefas filtradas para hoje: {len(filtered_tasks)}")
