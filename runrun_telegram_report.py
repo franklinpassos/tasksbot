@@ -6,7 +6,10 @@ import pytz  # IMPORTANTE: pip install pytz
 APP_KEY = os.getenv("RUNRUN_APP_KEY")
 USER_TOKEN = os.getenv("RUNRUN_USER_TOKEN")
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+# Captura os chat IDs a partir de secrets
+CHAT_ID_1 = os.getenv("TELEGRAM_CHAT_ID")
+CHAT_ID_2 = os.getenv("TELEGRAM_CHAT_ID_2")
 
 HEADERS = {
     "App-Key": APP_KEY,
@@ -20,131 +23,89 @@ def get_users():
     if response.status_code != 200:
         print("Erro ao buscar usuários:", response.text)
         return {}
-
     users_data = response.json()
-    if isinstance(users_data, dict):
-        users = users_data.get("data", [])
-    else:
-        users = users_data
-
+    users = users_data.get("data", []) if isinstance(users_data, dict) else users_data
     return {user["id"]: user["name"] for user in users}
 
 def parse_iso_datetime(date_str):
     try:
         dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=pytz.UTC)
-        else:
-            dt = dt.astimezone(pytz.UTC)
-        return dt
-    except Exception:
+        return dt.astimezone(pytz.UTC) if dt.tzinfo else dt.replace(tzinfo=pytz.UTC)
+    except:
         return None
 
 def get_all_tasks():
-    tasks = []
-    page = 1
-    per_page = 50
-
+    tasks, page, per_page = [], 1, 50
     while True:
         url = f"https://runrun.it/api/v1.0/tasks?page={page}&per_page={per_page}"
-        response = requests.get(url, headers=HEADERS)
-        if response.status_code != 200:
-            print(f"Erro ao buscar tarefas na página {page}:", response.text)
+        resp = requests.get(url, headers=HEADERS)
+        if resp.status_code != 200:
+            print(f"Erro ao buscar tarefas na página {page}:", resp.text)
             break
-
-        tasks_data = response.json()
-        if isinstance(tasks_data, dict):
-            data = tasks_data.get("data", [])
-        else:
-            data = tasks_data
-
+        data = resp.json().get("data", [])
         if not data:
             break
-
         tasks.extend(data)
         page += 1
-
     return tasks
 
 def get_today_tasks():
     brt = pytz.timezone("America/Sao_Paulo")
-    now_brt = datetime.now(tz=brt)
-    today = now_brt.replace(hour=0, minute=0, second=0, microsecond=0)
-    tomorrow = today + timedelta(days=1)
+    now = datetime.now(tz=brt)
+    today, tomorrow = now.replace(hour=0,minute=0,second=0,microsecond=0), now.replace(hour=0,minute=0,second=0,microsecond=0) + timedelta(days=1)
 
     all_tasks = get_all_tasks()
     print(f"Total tarefas obtidas: {len(all_tasks)}")
-
-    filtered_tasks = []
-    for task in all_tasks:
-        desired_date_str = task.get("desired_date")
-        if not desired_date_str:
+    filtered = []
+    for t in all_tasks:
+        ds = parse_iso_datetime(t.get("desired_date") or "")
+        if not ds:
             continue
-        desired_date = parse_iso_datetime(desired_date_str)
-        if not desired_date:
-            continue
-        desired_date_brt = desired_date.astimezone(brt)
-        if today <= desired_date_brt < tomorrow and task.get("status") != "delivered":
-            filtered_tasks.append(task)
+        db = ds.astimezone(brt)
+        if today <= db < tomorrow and t.get("status") != "delivered":
+            filtered.append(t)
+    print(f"Total tarefas filtradas para hoje: {len(filtered)}")
+    return filtered
 
-    print(f"Total tarefas filtradas para hoje: {len(filtered_tasks)}")
-    return filtered_tasks
-
-def send_to_telegram(message):
+def send_to_all(message):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": message,
-        "parse_mode": "HTML"
-    }
-    response = requests.post(url, json=payload)
-    if response.status_code != 200:
-        print("Erro ao enviar mensagem para o Telegram:", response.text)
+    for cid in [CHAT_ID_1, CHAT_ID_2]:
+        if not cid:
+            continue
+        resp = requests.post(url, json={"chat_id": cid, "text": message, "parse_mode": "HTML"})
+        if resp.status_code != 200:
+            print(f"❌ Erro ao enviar pra {cid}: {resp.text}")
 
-def split_and_send_message(full_message, max_length=4096):
-    while len(full_message) > max_length:
-        split_point = full_message.rfind('\n', 0, max_length)
-        if split_point == -1:
-            split_point = max_length
-        send_to_telegram(full_message[:split_point])
-        full_message = full_message[split_point:].lstrip()
-    if full_message:
-        send_to_telegram(full_message)
+def split_and_send(msg, max_len=4096):
+    while len(msg) > max_len:
+        idx = msg.rfind('\n', 0, max_len)
+        if idx == -1:
+            idx = max_len
+        send_to_all(msg[:idx])
+        msg = msg[idx:].lstrip()
+    if msg:
+        send_to_all(msg)
 
 def main():
-    user_dict = get_users()
+    if not all([APP_KEY, USER_TOKEN, BOT_TOKEN, CHAT_ID_1]):
+        raise Exception("⚠️ Variável de ambiente faltando.")
     tasks = get_today_tasks()
-
     if not tasks:
-        send_to_telegram("✅ Nenhuma tarefa agendada para hoje.")
+        split_and_send("✅ Nenhuma tarefa agendada para hoje.")
         return
 
-    message = "<b>Tarefas para hoje:</b>\n\n"
-    for task in tasks:
-        title = task.get("title") or "Sem título"
-
-        # Para responsáveis, concatena os nomes de todos na lista 'assignments'
-        assignments = task.get("assignments") or []
-        if assignments:
-            responsible_names = ", ".join([a.get("assignee_name", "Desconhecido") for a in assignments])
+    msg = "<b>Tarefas para hoje:</b>\n\n"
+    for t in tasks:
+        title = t.get("title") or "Sem título"
+        assigns = t.get("assignments") or []
+        if assigns:
+            resps = ", ".join(a.get("assignee_name","Desconhecido") for a in assigns)
         else:
-            # fallback para responsável único (chave 'responsible_name' ou 'user_name')
-            responsible_names = task.get("responsible_name") or task.get("user_name") or "Desconhecido"
-
-        project_name = task.get("project_name") or "Projeto não identificado"
-        task_id = task.get("id")
-        task_url = f"https://runrun.it/tasks/{task_id}" if task_id else "URL indisponível"
-
-        message += (
-            f"📌 <b>{title}</b>\n"
-            f"👤 Responsável: {responsible_names}\n"
-            f"📂 Projeto: {project_name}\n"
-            f"🔗 <a href=\"{task_url}\">Abrir tarefa</a>\n\n"
-        )
-
-    split_and_send_message(message)
+            resps = t.get("responsible_name") or t.get("user_name") or "Desconhecido"
+        proj = t.get("project_name") or "Projeto não identificado"
+        url = t.get("id") and f"https://runrun.it/tasks/{t.get('id')}" or "URL indisponível"
+        msg += f"📌 <b>{title}</b>\n👤 Responsável: {resps}\n📂 Projeto: {proj}\n🔗 <a href=\"{url}\">Abrir tarefa</a>\n\n"
+    split_and_send(msg)
 
 if __name__ == "__main__":
-    if not all([APP_KEY, USER_TOKEN, BOT_TOKEN, CHAT_ID]):
-        raise Exception("⚠️ Variável de ambiente faltando.")
     main()
