@@ -31,9 +31,7 @@ def get_users():
 
 def parse_iso_datetime(date_str):
     try:
-        # Substitui Z por +00:00 para compatibilidade ISO
         dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-        # Garante que seja timezone-aware
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=pytz.UTC)
         else:
@@ -43,7 +41,7 @@ def parse_iso_datetime(date_str):
         return None
 
 def get_today_tasks():
-    brt = pytz.timezone("America/Sao_Paulo")  # fuso horário Brasília
+    brt = pytz.timezone("America/Sao_Paulo")
     now_brt = datetime.now(tz=brt)
     today = now_brt.replace(hour=0, minute=0, second=0, microsecond=0)
     tomorrow = today + timedelta(days=1)
@@ -68,7 +66,6 @@ def get_today_tasks():
         desired_date = parse_iso_datetime(desired_date_str)
         if not desired_date:
             continue
-        # converte desired_date para BRT para comparar
         desired_date_brt = desired_date.astimezone(brt)
         if today <= desired_date_brt < tomorrow and task.get("status") != "delivered":
             filtered_tasks.append(task)
@@ -107,8 +104,19 @@ def main():
     message = "<b>Tarefas para hoje:</b>\n\n"
     for task in tasks:
         title = task.get("name") or task.get("title") or "Sem título"
-        responsible_id = task.get("user_id")
+
+        # Tentativa 1: campo "responsible_id"
+        responsible_id = task.get("responsible_id")
+        # Tentativa 2: campo "user_id" se não achar "responsible_id"
+        if not responsible_id:
+            responsible_id = task.get("user_id")
+
+        # Debug: printar IDs que não foram encontrados
+        if responsible_id not in user_dict:
+            print(f"Responsável ID {responsible_id} não encontrado entre usuários.")
+
         responsible = user_dict.get(responsible_id, "Desconhecido")
+
         task_id = task.get("id")
         task_url = f"https://runrun.it/tasks/{task_id}" if task_id else "URL indisponível"
         message += f"📌 <b>{title}</b>\n👤 Responsável: {responsible}\n🔗 <a href=\"{task_url}\">Abrir tarefa</a>\n\n"
