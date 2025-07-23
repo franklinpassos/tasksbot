@@ -1,7 +1,7 @@
 name: Testar Responsável Runrun.it
 
 on:
-  workflow_dispatch:  # Permite execução manual
+  workflow_dispatch:
 
 jobs:
   imprimir_primeira_tarefa:
