@@ -29,10 +29,21 @@ def get_users():
 
     return {user["id"]: user["name"] for user in users}
 
+def parse_iso_datetime(date_str):
+    try:
+        dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=pytz.UTC)
+        else:
+            dt = dt.astimezone(pytz.UTC)
+        return dt
+    except Exception:
+        return None
+
 def get_today_tasks():
     brt = pytz.timezone("America/Sao_Paulo")
-    now_brt = datetime.now(tz=brt).date()  # pega só a data
-    today = now_brt
+    now_brt = datetime.now(tz=brt)
+    today = now_brt.replace(hour=0, minute=0, second=0, microsecond=0)
     tomorrow = today + timedelta(days=1)
 
     url = "https://runrun.it/api/v1.0/tasks"
@@ -52,11 +63,11 @@ def get_today_tasks():
         desired_date_str = task.get("desired_date")
         if not desired_date_str:
             continue
-        try:
-            desired_date = datetime.strptime(desired_date_str, "%Y-%m-%d").date()
-        except Exception:
+        desired_date = parse_iso_datetime(desired_date_str)
+        if not desired_date:
             continue
-        if desired_date < tomorrow and task.get("status") != "delivered":
+        desired_date_brt = desired_date.astimezone(brt)
+        if today <= desired_date_brt < tomorrow and task.get("status") != "delivered":
             filtered_tasks.append(task)
 
     return filtered_tasks
@@ -93,7 +104,14 @@ def main():
     message = "<b>Tarefas para hoje:</b>\n\n"
     for task in tasks:
         title = task.get("title") or task.get("name") or "Sem título"
-        responsible = task.get("responsible_name") or "Desconhecido"
+
+        assignments = task.get("assignments", [])
+        if assignments:
+            responsible_names = [a.get("assignee_name") for a in assignments if a.get("assignee_name")]
+            responsible = ", ".join(responsible_names) if responsible_names else "Desconhecido"
+        else:
+            responsible = task.get("responsible_name") or "Desconhecido"
+
         project_name = task.get("project_name") or "Projeto não identificado"
         task_id = task.get("id")
         task_url = f"https://runrun.it/tasks/{task_id}" if task_id else "URL indisponível"
