@@ -40,26 +40,43 @@ def parse_iso_datetime(date_str):
     except Exception:
         return None
 
+def get_all_tasks():
+    tasks = []
+    page = 1
+    per_page = 50
+
+    while True:
+        url = f"https://runrun.it/api/v1.0/tasks?page={page}&per_page={per_page}"
+        response = requests.get(url, headers=HEADERS)
+        if response.status_code != 200:
+            print(f"Erro ao buscar tarefas na página {page}:", response.text)
+            break
+
+        tasks_data = response.json()
+        if isinstance(tasks_data, dict):
+            data = tasks_data.get("data", [])
+        else:
+            data = tasks_data
+
+        if not data:
+            break
+
+        tasks.extend(data)
+        page += 1
+
+    return tasks
+
 def get_today_tasks():
     brt = pytz.timezone("America/Sao_Paulo")
     now_brt = datetime.now(tz=brt)
     today = now_brt.replace(hour=0, minute=0, second=0, microsecond=0)
     tomorrow = today + timedelta(days=1)
 
-    url = "https://runrun.it/api/v1.0/tasks"
-    response = requests.get(url, headers=HEADERS)
-    if response.status_code != 200:
-        print("Erro ao buscar tarefas:", response.text)
-        return []
-
-    tasks_data = response.json()
-    if isinstance(tasks_data, dict):
-        tasks = tasks_data.get("data", [])
-    else:
-        tasks = tasks_data
+    all_tasks = get_all_tasks()
+    print(f"Total tarefas obtidas: {len(all_tasks)}")
 
     filtered_tasks = []
-    for task in tasks:
+    for task in all_tasks:
         desired_date_str = task.get("desired_date")
         if not desired_date_str:
             continue
@@ -70,6 +87,7 @@ def get_today_tasks():
         if today <= desired_date_brt < tomorrow and task.get("status") != "delivered":
             filtered_tasks.append(task)
 
+    print(f"Total tarefas filtradas para hoje: {len(filtered_tasks)}")
     return filtered_tasks
 
 def send_to_telegram(message):
@@ -103,14 +121,15 @@ def main():
 
     message = "<b>Tarefas para hoje:</b>\n\n"
     for task in tasks:
-        title = task.get("title") or task.get("name") or "Sem título"
+        title = task.get("title") or "Sem título"
 
-        assignments = task.get("assignments", [])
+        # Para responsáveis, concatena os nomes de todos na lista 'assignments'
+        assignments = task.get("assignments") or []
         if assignments:
-            responsible_names = [a.get("assignee_name") for a in assignments if a.get("assignee_name")]
-            responsible = ", ".join(responsible_names) if responsible_names else "Desconhecido"
+            responsible_names = ", ".join([a.get("assignee_name", "Desconhecido") for a in assignments])
         else:
-            responsible = task.get("responsible_name") or "Desconhecido"
+            # fallback para responsável único (chave 'responsible_name' ou 'user_name')
+            responsible_names = task.get("responsible_name") or task.get("user_name") or "Desconhecido"
 
         project_name = task.get("project_name") or "Projeto não identificado"
         task_id = task.get("id")
@@ -118,7 +137,7 @@ def main():
 
         message += (
             f"📌 <b>{title}</b>\n"
-            f"👤 Responsável: {responsible}\n"
+            f"👤 Responsável: {responsible_names}\n"
             f"📂 Projeto: {project_name}\n"
             f"🔗 <a href=\"{task_url}\">Abrir tarefa</a>\n\n"
         )
