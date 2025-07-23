@@ -32,9 +32,11 @@ def get_users():
 
 def parse_iso_datetime(date_str):
     try:
-        dt = datetime.fromisoformat(date_str)
+        dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=pytz.UTC)
+        else:
+            dt = dt.astimezone(pytz.UTC)
         return dt
     except Exception:
         return None
@@ -68,7 +70,8 @@ def get_all_tasks():
 def get_today_tasks():
     brt = pytz.timezone("America/Sao_Paulo")
     now_brt = datetime.now(tz=brt)
-    today_date = now_brt.date()
+    today = now_brt.replace(hour=0, minute=0, second=0, microsecond=0)
+    tomorrow = today + timedelta(days=1)
 
     all_tasks = get_all_tasks()
     print(f"Total tarefas obtidas: {len(all_tasks)}")
@@ -81,10 +84,9 @@ def get_today_tasks():
         desired_date = parse_iso_datetime(desired_date_str)
         if not desired_date:
             continue
-
-        desired_date_local = desired_date.date()
-
-        if desired_date_local == today_date and task.get("status") != "delivered":
+        desired_date_brt = desired_date.astimezone(brt)
+        # Apenas desired_date menor que amanhã (exclui amanhã)
+        if today <= desired_date_brt < tomorrow and task.get("status") != "delivered":
             filtered_tasks.append(task)
 
     print(f"Total tarefas filtradas para hoje: {len(filtered_tasks)}")
@@ -138,7 +140,7 @@ def main():
         project_name = task.get("project_name") or "Projeto não identificado"
         task_id = task.get("id")
         task_url = f"https://runrun.it/tasks/{task_id}" if task_id else "URL indisponível"
-        status = task.get("status", "Status desconhecido")
+        status = task.get("task_status_name", "Status desconhecido")
 
         message += (
             f"📌 <b>{title}</b>\n"
