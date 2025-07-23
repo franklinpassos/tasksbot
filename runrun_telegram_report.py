@@ -1,81 +1,65 @@
 import requests
-from datetime import datetime
 import os
+from datetime import datetime, timezone
 
-RUNRUN_APP_KEY = os.getenv("RUNRUN_APP_KEY")
-RUNRUN_USER_TOKEN = os.getenv("RUNRUN_USER_TOKEN")
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+APP_KEY = os.getenv("RUNRUN_APP_KEY")
+USER_TOKEN = os.getenv("RUNRUN_USER_TOKEN")
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-if not all([RUNRUN_APP_KEY, RUNRUN_USER_TOKEN, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID]):
-    raise Exception("Algum token ou variável de ambiente está faltando!")
-
-today = datetime.today().strftime('%Y-%m-%d')
-url = f"https://runrun.it/api/v1.0/tasks?due_date={today}"
-
-headers = {
-    "App-Key": RUNRUN_APP_KEY,
-    "User-Token": RUNRUN_USER_TOKEN,
+HEADERS = {
+    "App-Key": APP_KEY,
+    "User-Token": USER_TOKEN,
     "Content-Type": "application/json"
 }
 
-response = requests.get(url, headers=headers)
+def get_users():
+    url = "https://runrun.it/api/v1.0/users"
+    response = requests.get(url, headers=HEADERS)
+    if response.status_code != 200:
+        print("Erro ao buscar usuários:", response.text)
+        return {}
+    users = response.json()
+    return {user["id"]: user["name"] for user in users}
 
-if response.status_code != 200:
-    raise Exception(f"Erro ao buscar tarefas: {response.status_code} - {response.text}")
+def get_today_tasks():
+    today = datetime.now(timezone.utc).date().isoformat()
+    url = f"https://runrun.it/api/v1.0/tasks?due_date={today}"
+    response = requests.get(url, headers=HEADERS)
+    if response.status_code != 200:
+        print("Erro ao buscar tarefas:", response.text)
+        return []
+    return response.json()
 
-tasks = response.json()
-tarefas_abertas = [t for t in tasks if not t.get("completed_at")]
-
-def obter_responsavel(tarefa):
-    # Tenta pegar o responsável por vários campos possíveis
-    if tarefa.get("user") and tarefa["user"].get("name"):
-        return tarefa["user"]["name"]
-    elif tarefa.get("assignee") and tarefa["assignee"].get("name"):
-        return tarefa["assignee"]["name"]
-    elif tarefa.get("assigned_to") and tarefa["assigned_to"].get("name"):
-        return tarefa["assigned_to"]["name"]
-    elif tarefa.get("allocated_user") and tarefa["allocated_user"].get("name"):
-        return tarefa["allocated_user"]["name"]
-    else:
-        return "Desconhecido"
-
-if tarefas_abertas:
-    mensagem = f"📋 *Tarefas com entrega para hoje ({today}):*\n\n"
-    for t in tarefas_abertas:
-        nome = t.get("name") or t.get("title") or "Sem nome"
-        responsavel = obter_responsavel(t)
-        mensagem += f"- {nome} (Responsável: {responsavel})\n"
-else:
-    mensagem = f"✅ Nenhuma tarefa com entrega para hoje ({today})."
-
-MAX_TELEGRAM_MSG_LENGTH = 4000
-
-def enviar_mensagem(texto):
-    telegram_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    telegram_data = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": texto,
-        "parse_mode": "Markdown"
+def send_to_telegram(message):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": CHAT_ID,
+        "text": message,
+        "parse_mode": "HTML"
     }
-    resp = requests.post(telegram_url, json=telegram_data)
-    if resp.status_code != 200:
-        raise Exception(f"Erro ao enviar mensagem no Telegram: {resp.text}")
+    response = requests.post(url, json=payload)
+    if response.status_code != 200:
+        print("Erro ao enviar mensagem para o Telegram:", response.text)
 
-def dividir_mensagem(texto, max_len=MAX_TELEGRAM_MSG_LENGTH):
-    partes = []
-    while len(texto) > max_len:
-        corte = texto.rfind('\n', 0, max_len)
-        if corte == -1:
-            corte = max_len
-        partes.append(texto[:corte])
-        texto = texto[corte:].lstrip('\n')
-    partes.append(texto)
-    return partes
+def main():
+    user_dict = get_users()
+    tasks = get_today_tasks()
 
-partes = dividir_mensagem(mensagem)
-for i, parte in enumerate(partes):
-    enviar_mensagem(parte)
-    print(f"Enviada parte {i+1}/{len(partes)}")
+    if not tasks:
+        send_to_telegram("✅ Nenhuma tarefa agendada para hoje.")
+        return
 
-print("Todas as mensagens enviadas com sucesso!")
+    message = "<b>Tarefas para hoje:</b>\n\n"
+    for task in tasks:
+        title = task.get("name", "Sem título")
+        responsible_id = task.get("responsible_id")
+        responsible = user_dict.get(responsible_id, "Desconhecido")
+        due_date = task.get("due_date", "Sem data")
+        message += f"📌 <b>{title}</b>\n👤 Responsável: {responsible}\n📅 Vencimento: {due_date}\n\n"
+
+    send_to_telegram(message)
+
+if __name__ == "__main__":
+    if not all([APP_KEY, USER_TOKEN, BOT_TOKEN, CHAT_ID]):
+        raise Exception("⚠️ Var
