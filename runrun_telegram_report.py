@@ -1,6 +1,7 @@
 import requests
 import os
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta
+import pytz  # IMPORTANTE: pip install pytz
 
 APP_KEY = os.getenv("RUNRUN_APP_KEY")
 USER_TOKEN = os.getenv("RUNRUN_USER_TOKEN")
@@ -32,18 +33,19 @@ def parse_iso_datetime(date_str):
     try:
         # Substitui Z por +00:00 para compatibilidade ISO
         dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-        # Garante que seja timezone-aware em UTC
+        # Garante que seja timezone-aware
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=pytz.UTC)
         else:
-            dt = dt.astimezone(timezone.utc)
+            dt = dt.astimezone(pytz.UTC)
         return dt
     except Exception:
         return None
 
 def get_today_tasks():
-    now_utc = datetime.now(timezone.utc)
-    today = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+    brt = pytz.timezone("America/Sao_Paulo")  # fuso horário Brasília
+    now_brt = datetime.now(tz=brt)
+    today = now_brt.replace(hour=0, minute=0, second=0, microsecond=0)
     tomorrow = today + timedelta(days=1)
 
     url = "https://runrun.it/api/v1.0/tasks"
@@ -58,7 +60,6 @@ def get_today_tasks():
     else:
         tasks = tasks_data
 
-    # Filtra tasks com desired_date >= hoje e < amanhã e status diferente de "delivered"
     filtered_tasks = []
     for task in tasks:
         desired_date_str = task.get("desired_date")
@@ -67,7 +68,9 @@ def get_today_tasks():
         desired_date = parse_iso_datetime(desired_date_str)
         if not desired_date:
             continue
-        if today <= desired_date < tomorrow and task.get("status") != "delivered":
+        # converte desired_date para BRT para comparar
+        desired_date_brt = desired_date.astimezone(brt)
+        if today <= desired_date_brt < tomorrow and task.get("status") != "delivered":
             filtered_tasks.append(task)
 
     return filtered_tasks
