@@ -1,6 +1,6 @@
 import requests
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone, timedelta
 
 APP_KEY = os.getenv("RUNRUN_APP_KEY")
 USER_TOKEN = os.getenv("RUNRUN_USER_TOKEN")
@@ -29,18 +29,24 @@ def get_users():
     return {user["id"]: user["name"] for user in users}
 
 def parse_iso_datetime(date_str):
-    # Tenta converter string ISO 8601 para datetime com timezone UTC
     try:
-        return datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+        # Substitui Z por +00:00 para compatibilidade ISO
+        dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+        # Garante que seja timezone-aware em UTC
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        else:
+            dt = dt.astimezone(timezone.utc)
+        return dt
     except Exception:
         return None
 
 def get_today_tasks():
-    now = datetime.now(timezone.utc)
-    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    now_utc = datetime.now(timezone.utc)
+    today = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
     tomorrow = today + timedelta(days=1)
 
-    url = f"https://runrun.it/api/v1.0/tasks"
+    url = "https://runrun.it/api/v1.0/tasks"
     response = requests.get(url, headers=HEADERS)
     if response.status_code != 200:
         print("Erro ao buscar tarefas:", response.text)
@@ -52,18 +58,16 @@ def get_today_tasks():
     else:
         tasks = tasks_data
 
+    # Filtra tasks com desired_date >= hoje e < amanhã e status diferente de "delivered"
     filtered_tasks = []
     for task in tasks:
-        if task.get("status") == "delivered":
-            continue
         desired_date_str = task.get("desired_date")
         if not desired_date_str:
             continue
         desired_date = parse_iso_datetime(desired_date_str)
         if not desired_date:
             continue
-        # Filtra desired_date >= hoje 0h UTC e < amanhã 0h UTC
-        if today <= desired_date < tomorrow:
+        if today <= desired_date < tomorrow and task.get("status") != "delivered":
             filtered_tasks.append(task)
 
     return filtered_tasks
