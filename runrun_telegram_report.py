@@ -120,12 +120,21 @@ def main():
     message = "<b>Tarefas para hoje:</b>\n\n"
     for task in tasks:
         title = task.get("name") or task.get("title") or "Sem título"
-        responsible_id = task.get("user_id")
-        responsible = user_dict.get(responsible_id, "Desconhecido")
+
+        # Responsável: tenta pegar direto da task, depois no dicionário, senão desconhecido
+        responsible = task.get("responsible_name")
+        if not responsible:
+            responsible_id = task.get("user_id") or task.get("responsible_id")
+            responsible = user_dict.get(responsible_id, "Desconhecido")
+
+        # Projeto: tenta pegar direto da task, depois no dicionário, senão "Projeto não identificado"
+        project_name = task.get("project_name")
+        if not project_name:
+            project_id = task.get("project_id")
+            project_name = project_dict.get(project_id, "Projeto não identificado")
+
         task_id = task.get("id")
         task_url = f"https://runrun.it/tasks/{task_id}" if task_id else "URL indisponível"
-        project_id = task.get("project_id")
-        project_name = project_dict.get(project_id, "Projeto não identificado")
 
         message += (
             f"📌 <b>{title}</b>\n"
