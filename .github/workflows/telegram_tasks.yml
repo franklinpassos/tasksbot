@@ -3,7 +3,7 @@ name: Enviar tarefas do dia para o Telegram
 on:
   schedule:
     - cron: '0 20 * * *'  # 17:00 BRT = 20:00 UTC
-    - cron: '0 22 * * *'   # 19:00 BRT = 22:00 UTC
+    - cron: '0 22 * * *'  # 19:00 BRT = 22:00 UTC
   workflow_dispatch:
 
 jobs:
@@ -27,4 +27,5 @@ jobs:
           RUNRUN_USER_TOKEN: ${{ secrets.RUNRUN_USER_TOKEN }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_CHAT_ID_2: ${{ secrets.TELEGRAM_CHAT_ID_2 }}
         run: python runrun_telegram_report.py
