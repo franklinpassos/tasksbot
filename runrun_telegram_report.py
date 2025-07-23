@@ -22,8 +22,27 @@ def get_users():
         return {}
 
     users_data = response.json()
-    users = users_data.get("data", []) if isinstance(users_data, dict) else users_data
+    if isinstance(users_data, dict):
+        users = users_data.get("data", [])
+    else:
+        users = users_data
+
     return {user["id"]: user["name"] for user in users}
+
+def get_projects():
+    url = "https://runrun.it/api/v1.0/projects"
+    response = requests.get(url, headers=HEADERS)
+    if response.status_code != 200:
+        print("Erro ao buscar projetos:", response.text)
+        return {}
+
+    projects_data = response.json()
+    if isinstance(projects_data, dict):
+        projects = projects_data.get("data", [])
+    else:
+        projects = projects_data
+
+    return {project["id"]: project["name"] for project in projects}
 
 def parse_iso_datetime(date_str):
     try:
@@ -49,7 +68,10 @@ def get_today_tasks():
         return []
 
     tasks_data = response.json()
-    tasks = tasks_data.get("data", []) if isinstance(tasks_data, dict) else tasks_data
+    if isinstance(tasks_data, dict):
+        tasks = tasks_data.get("data", [])
+    else:
+        tasks = tasks_data
 
     filtered_tasks = []
     for task in tasks:
@@ -88,6 +110,7 @@ def split_and_send_message(full_message, max_length=4096):
 
 def main():
     user_dict = get_users()
+    project_dict = get_projects()
     tasks = get_today_tasks()
 
     if not tasks:
@@ -96,12 +119,13 @@ def main():
 
     message = "<b>Tarefas para hoje:</b>\n\n"
     for task in tasks:
-        title = task.get("title", "Sem título")
+        title = task.get("name") or task.get("title") or "Sem título"
         responsible_id = task.get("user_id")
         responsible = user_dict.get(responsible_id, "Desconhecido")
         task_id = task.get("id")
         task_url = f"https://runrun.it/tasks/{task_id}" if task_id else "URL indisponível"
-        project_name = task.get("project", {}).get("name", "Projeto não identificado")
+        project_id = task.get("project_id")
+        project_name = project_dict.get(project_id, "Projeto não identificado")
 
         message += (
             f"📌 <b>{title}</b>\n"
