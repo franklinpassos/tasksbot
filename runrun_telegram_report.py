@@ -82,7 +82,6 @@ def get_today_tasks():
         if not desired_date:
             continue
 
-        # Não converte para timezone novamente, só pega a data local do datetime com fuso
         desired_date_local = desired_date.date()
 
         if desired_date_local == today_date and task.get("status") != "delivered":
@@ -139,11 +138,13 @@ def main():
         project_name = task.get("project_name") or "Projeto não identificado"
         task_id = task.get("id")
         task_url = f"https://runrun.it/tasks/{task_id}" if task_id else "URL indisponível"
+        status = task.get("status", "Status desconhecido")
 
         message += (
             f"📌 <b>{title}</b>\n"
             f"👤 Responsável: {responsible_names}\n"
             f"📂 Projeto: {project_name}\n"
+            f"⚙️ Status: {status}\n"
             f"🔗 <a href=\"{task_url}\">Abrir tarefa</a>\n\n"
         )
 
