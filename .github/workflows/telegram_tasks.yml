@@ -19,7 +19,7 @@ jobs:
           python-version: '3.10'
 
       - name: Instalar dependências
-        run: pip install requests
+        run: pip install requests pytz
 
       - name: Executar script
         env:
