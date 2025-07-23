@@ -44,7 +44,17 @@ def get_today_tasks():
     else:
         tasks = tasks_data
 
-    return [task for task in tasks if task.get("status") != "delivered"]
+    # Filtra tasks:
+    # - Que têm due_date exatamente igual a hoje
+    # - Que não estão entregues (status != "delivered")
+    filtered_tasks = []
+    for task in tasks:
+        due_date = task.get("due_date")
+        status = task.get("status")
+        if due_date == today and status != "delivered":
+            filtered_tasks.append(task)
+
+    return filtered_tasks
 
 def send_to_telegram(message):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
