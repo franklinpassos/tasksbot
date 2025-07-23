@@ -62,4 +62,5 @@ def main():
 
 if __name__ == "__main__":
     if not all([APP_KEY, USER_TOKEN, BOT_TOKEN, CHAT_ID]):
-        raise Exception("⚠️ Var
+        raise Exception("⚠️ Variável de ambiente faltando.")
+    main()
