@@ -96,6 +96,10 @@ def split_and_send_message(full_message, max_length=4096):
 def main():
     user_dict = get_users()
     tasks = get_today_tasks()
+    
+import json
+print(json.dumps(tasks[0], indent=2))
+exit()
 
     if not tasks:
         send_to_telegram("✅ Nenhuma tarefa agendada para hoje.")
