@@ -29,21 +29,10 @@ def get_users():
 
     return {user["id"]: user["name"] for user in users}
 
-def parse_iso_datetime(date_str):
-    try:
-        dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=pytz.UTC)
-        else:
-            dt = dt.astimezone(pytz.UTC)
-        return dt
-    except Exception:
-        return None
-
 def get_today_tasks():
     brt = pytz.timezone("America/Sao_Paulo")
-    now_brt = datetime.now(tz=brt)
-    today = now_brt.replace(hour=0, minute=0, second=0, microsecond=0)
+    now_brt = datetime.now(tz=brt).date()  # pega só a data
+    today = now_brt
     tomorrow = today + timedelta(days=1)
 
     url = "https://runrun.it/api/v1.0/tasks"
@@ -63,14 +52,11 @@ def get_today_tasks():
         desired_date_str = task.get("desired_date")
         if not desired_date_str:
             continue
-        desired_date = parse_iso_datetime(desired_date_str)
-        if not desired_date:
+        try:
+            desired_date = datetime.strptime(desired_date_str, "%Y-%m-%d").date()
+        except Exception:
             continue
-        desired_date_brt = desired_date.astimezone(brt)
-        # Normaliza para o início do dia (00:00)
-        desired_date_brt_day = desired_date_brt.replace(hour=0, minute=0, second=0, microsecond=0)
-        # Filtra: desired_date menor que amanhã (exclui amanhã em diante)
-        if desired_date_brt_day < tomorrow and task.get("status") != "delivered":
+        if desired_date < tomorrow and task.get("status") != "delivered":
             filtered_tasks.append(task)
 
     return filtered_tasks
