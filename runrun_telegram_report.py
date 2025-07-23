@@ -19,39 +19,28 @@ def get_users():
     if response.status_code != 200:
         print("Erro ao buscar usuários:", response.text)
         return {}
-
     users_data = response.json()
-
-    if isinstance(users_data, dict):
-        users = users_data.get("data", [])
-    else:
-        users = users_data
-
-    return {user["id"]: user["name"] for user in users}
+    # Se a resposta for um dict com chave 'data', use-a; senão, use a lista diretamente
+    users_list = users_data.get("data", users_data) if isinstance(users_data, dict) else users_data
+    return {user["id"]: user["name"] for user in users_list}
 
 def get_today_tasks():
-    today = datetime.now(timezone.utc).date().isoformat()
-    url = f"https://runrun.it/api/v1.0/tasks?due_date={today}"
+    url = "https://runrun.it/api/v1.0/tasks"
     response = requests.get(url, headers=HEADERS)
     if response.status_code != 200:
         print("Erro ao buscar tarefas:", response.text)
         return []
 
     tasks_data = response.json()
+    tasks_list = tasks_data.get("data", tasks_data) if isinstance(tasks_data, dict) else tasks_data
 
-    if isinstance(tasks_data, dict):
-        tasks = tasks_data.get("data", [])
-    else:
-        tasks = tasks_data
+    today = datetime.now(timezone.utc).date().isoformat()
 
-    # Filtra tasks:
-    # - Que têm due_date exatamente igual a hoje
-    # - Que não estão entregues (status != "delivered")
     filtered_tasks = []
-    for task in tasks:
-        due_date = task.get("due_date")
+    for task in tasks_list:
+        desired_date = task.get("desired_date")
         status = task.get("status")
-        if due_date == today and status != "delivered":
+        if desired_date == today and status != "delivered":
             filtered_tasks.append(task)
 
     return filtered_tasks
@@ -68,6 +57,7 @@ def send_to_telegram(message):
         print("Erro ao enviar mensagem para o Telegram:", response.text)
 
 def split_and_send_message(full_message, max_length=4096):
+    # Divide a mensagem em blocos menores e envia um por um
     while len(full_message) > max_length:
         split_point = full_message.rfind('\n', 0, max_length)
         if split_point == -1:
@@ -87,12 +77,12 @@ def main():
 
     message = "<b>Tarefas para hoje:</b>\n\n"
     for task in tasks:
-        title = task.get("name") or task.get("title") or "Sem título"
-        responsible_id = task.get("user_id")
+        title = task.get("name") or "Sem título"
+        responsible_id = task.get("user_id") or task.get("responsible_id")
         responsible = user_dict.get(responsible_id, "Desconhecido")
         task_id = task.get("id")
-        task_url = f"https://runrun.it/tasks/{task_id}" if task_id else "URL indisponível"
-        message += f"📌 <b>{title}</b>\n👤 Responsável: {responsible}\n🔗 <a href=\"{task_url}\">Abrir tarefa</a>\n\n"
+        url_task = f"https://app.runrun.it/tasks/{task_id}" if task_id else "URL indisponível"
+        message += f"📌 <b>{title}</b>\n👤 Responsável: {responsible}\n🔗 <a href=\"{url_task}\">Ver Task</a>\n\n"
 
     split_and_send_message(message)
 
