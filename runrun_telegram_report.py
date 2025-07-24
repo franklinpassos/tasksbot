@@ -145,6 +145,7 @@ def main():
             message += format_task_message(task)
 
     split_and_send_message(message.strip(), chat_ids=[CHAT_ID, CHAT_ID_SECUNDARIO])
+    print(f"Total tarefas incluídas na mensagem: {len(solicitado_tasks) + len(outras_tasks)}")
 
 if __name__ == "__main__":
     if not all([APP_KEY, USER_TOKEN, BOT_TOKEN, CHAT_ID, CHAT_ID_SECUNDARIO]):
