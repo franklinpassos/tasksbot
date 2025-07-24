@@ -1,7 +1,7 @@
 import requests
 import os
 from datetime import datetime, timedelta
-import pytz  # IMPORTANTE: pip install pytz
+import pytz
 
 APP_KEY = os.getenv("RUNRUN_APP_KEY")
 USER_TOKEN = os.getenv("RUNRUN_USER_TOKEN")
@@ -21,13 +21,11 @@ def get_users():
     if response.status_code != 200:
         print("Erro ao buscar usuários:", response.text)
         return {}
-
     users_data = response.json()
     if isinstance(users_data, dict):
         users = users_data.get("data", [])
     else:
         users = users_data
-
     return {user["id"]: user["name"] for user in users}
 
 def parse_iso_datetime(date_str):
@@ -45,32 +43,28 @@ def get_all_tasks():
     tasks = []
     page = 1
     per_page = 50
-
     while True:
         url = f"https://runrun.it/api/v1.0/tasks?page={page}&per_page={per_page}"
         response = requests.get(url, headers=HEADERS)
         if response.status_code != 200:
             print(f"Erro ao buscar tarefas na página {page}:", response.text)
             break
-
         tasks_data = response.json()
         if isinstance(tasks_data, dict):
             data = tasks_data.get("data", [])
         else:
             data = tasks_data
-
         if not data:
             break
-
         tasks.extend(data)
         page += 1
-
     return tasks
 
 def get_today_tasks():
     brt = pytz.timezone("America/Sao_Paulo")
     now_brt = datetime.now(tz=brt)
-    today = now_brt.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_brt = now_brt.replace(hour=0, minute=0, second=0, microsecond=0)
+    tomorrow_brt = today_brt + timedelta(days=1)
 
     all_tasks = get_all_tasks()
     print(f"Total tarefas obtidas: {len(all_tasks)}")
@@ -84,9 +78,7 @@ def get_today_tasks():
         if not desired_date:
             continue
         desired_date_brt = desired_date.astimezone(brt)
-
-        # ✅ Comparação ajustada para evitar tarefas de amanhã por fuso
-        if desired_date_brt.date() == today.date() and task.get("status") != "delivered":
+        if today_brt <= desired_date_brt < tomorrow_brt and task.get("status") != "delivered":
             filtered_tasks.append(task)
 
     print(f"Total tarefas filtradas para hoje: {len(filtered_tasks)}")
@@ -97,7 +89,6 @@ def send_to_telegram(message, chat_ids=None):
         chat_ids = [CHAT_ID]
     elif isinstance(chat_ids, str):
         chat_ids = [chat_ids]
-
     for chat_id in chat_ids:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
         payload = {
@@ -130,7 +121,6 @@ def main():
     message = "<b>Tarefas para hoje:</b>\n\n"
     for task in tasks:
         title = task.get("title") or "Sem título"
-
         assignments = task.get("assignments") or []
         if assignments:
             responsible_names = ", ".join([a.get("assignee_name", "Desconhecido") for a in assignments])
