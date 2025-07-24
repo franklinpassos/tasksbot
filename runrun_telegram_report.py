@@ -129,7 +129,7 @@ def main():
         send_to_telegram("✅ Nenhuma tarefa agendada para hoje.", chat_ids=[CHAT_ID, CHAT_ID_SECUNDARIO])
         return
 
-    solicitado_tasks = [t for t in tasks if t.get("task_status_name", "").lower() == "prazo solicitado"]
+    solicitado_tasks = [t for t in tasks if "prazo solicitado" in t.get("task_status_name", "").lower()]
     outras_tasks = [t for t in tasks if t not in solicitado_tasks]
 
     message = "<b>Tarefas para hoje:</b>\n\n"
