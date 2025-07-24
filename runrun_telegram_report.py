@@ -85,7 +85,7 @@ def get_today_tasks():
         if not desired_date:
             continue
         desired_date_brt = desired_date.astimezone(brt)
-        if today <= desired_date_brt < tomorrow and task.get("status") != "delivered":
+        if today <= desired_date_brt < tomorrow and task.get("task_status_name", "").lower() != "delivered":
             filtered_tasks.append(task)
 
     print(f"Total tarefas filtradas para hoje: {len(filtered_tasks)}")
