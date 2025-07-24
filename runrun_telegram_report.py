@@ -102,6 +102,24 @@ def split_and_send_message(full_message, max_length=4096, chat_ids=None):
     if full_message:
         send_to_telegram(full_message, chat_ids=chat_ids)
 
+def format_task_message(task):
+    title = task.get("title") or "Sem título"
+    assignments = task.get("assignments") or []
+    responsible_names = ", ".join([a.get("assignee_name", "Desconhecido") for a in assignments]) if assignments else (
+        task.get("responsible_name") or task.get("user_name") or "Desconhecido")
+    project_name = task.get("project_name") or "Projeto não identificado"
+    task_id = task.get("id")
+    task_url = f"https://runrun.it/tasks/{task_id}" if task_id else "URL indisponível"
+    status = task.get("task_status_name", "Status desconhecido")
+
+    return (
+        f"📌 <b>{title}</b>\n"
+        f"👤 Responsável: {responsible_names}\n"
+        f"📂 Projeto: {project_name}\n"
+        f"⚙️ Status: {status}\n"
+        f"🔗 <a href=\"{task_url}\">Abrir tarefa</a>\n\n"
+    )
+
 def main():
     user_dict = get_users()
     tasks = get_today_tasks()
@@ -111,46 +129,22 @@ def main():
         send_to_telegram("✅ Nenhuma tarefa agendada para hoje.", chat_ids=[CHAT_ID, CHAT_ID_SECUNDARIO])
         return
 
-    prazo_solicitado_tasks = []
-    demais_tasks = []
-
-    for task in tasks:
-        if task.get("task_status_name") == "Prazo Solicitado":
-            prazo_solicitado_tasks.append(task)
-        else:
-            demais_tasks.append(task)
-
-    def format_task(task):
-        title = task.get("title") or "Sem título"
-        assignments = task.get("assignments") or []
-        responsible_names = ", ".join([a.get("assignee_name", "Desconhecido") for a in assignments]) if assignments else (
-            task.get("responsible_name") or task.get("user_name") or "Desconhecido")
-        project_name = task.get("project_name") or "Projeto não identificado"
-        task_id = task.get("id")
-        task_url = f"https://runrun.it/tasks/{task_id}" if task_id else "URL indisponível"
-        status = task.get("task_status_name", "Status desconhecido")
-
-        return (
-            f"📌 <b>{title}</b>\n"
-            f"👤 Responsável: {responsible_names}\n"
-            f"📂 Projeto: {project_name}\n"
-            f"⚙️ Status: {status}\n"
-            f"🔗 <a href=\"{task_url}\">Abrir tarefa</a>\n\n"
-        )
+    solicitado_tasks = [t for t in tasks if t.get("task_status_name", "").lower() == "prazo solicitado"]
+    outras_tasks = [t for t in tasks if t not in solicitado_tasks]
 
     message = "<b>Tarefas para hoje:</b>\n\n"
 
-    if prazo_solicitado_tasks:
-        message += "<b>⚠️ Tarefas com status 'Prazo Solicitado':</b>\n\n"
-        for task in prazo_solicitado_tasks:
-            message += format_task(task)
+    if solicitado_tasks:
+        message += "<b>⏳ Tarefas com Prazo Solicitado:</b>\n\n"
+        for task in solicitado_tasks:
+            message += format_task_message(task)
 
-    if demais_tasks:
-        message += "<b>📋 Demais tarefas:</b>\n\n"
-        for task in demais_tasks:
-            message += format_task(task)
+    if outras_tasks:
+        message += "<b>📋 Outras tarefas:</b>\n\n"
+        for task in outras_tasks:
+            message += format_task_message(task)
 
-    split_and_send_message(message, chat_ids=[CHAT_ID, CHAT_ID_SECUNDARIO])
+    split_and_send_message(message.strip(), chat_ids=[CHAT_ID, CHAT_ID_SECUNDARIO])
 
 if __name__ == "__main__":
     if not all([APP_KEY, USER_TOKEN, BOT_TOKEN, CHAT_ID, CHAT_ID_SECUNDARIO]):
