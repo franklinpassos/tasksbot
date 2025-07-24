@@ -76,15 +76,17 @@ def get_today_tasks():
 
     filtered_tasks = []
     for task in all_tasks:
-        desired_date_str = task.get("desired_date")
+        desired_date_str = task.get("desired_date_with_time")  # Usando o campo com hora
         if not desired_date_str:
             continue
         desired_date = parse_iso_datetime(desired_date_str)
         if not desired_date:
             continue
 
-        # Convertendo para BRT e comparando somente a data (YYYY-MM-DD)
         desired_date_brt = desired_date.astimezone(brt).date()
+
+        # Debug para conferir datas
+        # print(f"Tarefa: {task.get('title', '')} - Desired Date UTC: {desired_date} - Desired Date BRT: {desired_date_brt} - Hoje BRT: {today_brt}")
 
         if desired_date_brt == today_brt and task.get("status") != "delivered":
             filtered_tasks.append(task)
