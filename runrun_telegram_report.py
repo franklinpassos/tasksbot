@@ -21,23 +21,14 @@ def get_users():
     if response.status_code != 200:
         print("Erro ao buscar usuários:", response.text)
         return {}
-
     users_data = response.json()
-    if isinstance(users_data, dict):
-        users = users_data.get("data", [])
-    else:
-        users = users_data
-
+    users = users_data.get("data", users_data) if isinstance(users_data, dict) else users_data
     return {user["id"]: user["name"] for user in users}
 
 def parse_iso_datetime(date_str):
     try:
         dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=pytz.UTC)
-        else:
-            dt = dt.astimezone(pytz.UTC)
-        return dt
+        return dt.astimezone(pytz.UTC) if dt.tzinfo else dt.replace(tzinfo=pytz.UTC)
     except Exception:
         return None
 
@@ -45,26 +36,18 @@ def get_all_tasks():
     tasks = []
     page = 1
     per_page = 50
-
     while True:
         url = f"https://runrun.it/api/v1.0/tasks?page={page}&per_page={per_page}"
         response = requests.get(url, headers=HEADERS)
         if response.status_code != 200:
             print(f"Erro ao buscar tarefas na página {page}:", response.text)
             break
-
         tasks_data = response.json()
-        if isinstance(tasks_data, dict):
-            data = tasks_data.get("data", [])
-        else:
-            data = tasks_data
-
+        data = tasks_data.get("data", tasks_data) if isinstance(tasks_data, dict) else tasks_data
         if not data:
             break
-
         tasks.extend(data)
         page += 1
-
     return tasks
 
 def get_today_tasks():
@@ -102,7 +85,8 @@ def send_to_telegram(message, chat_ids=None):
         payload = {
             "chat_id": chat_id,
             "text": message,
-            "parse_mode": "HTML"
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True
         }
         response = requests.post(url, json=payload)
         if response.status_code != 200:
@@ -121,33 +105,32 @@ def split_and_send_message(full_message, max_length=4096, chat_ids=None):
 def main():
     user_dict = get_users()
     tasks = get_today_tasks()
-
-    # Ordena as tasks pelo nome do projeto (project_name), tratando casos sem projeto como string vazia
     tasks.sort(key=lambda t: t.get("project_name") or "")
 
     if not tasks:
         send_to_telegram("✅ Nenhuma tarefa agendada para hoje.", chat_ids=[CHAT_ID, CHAT_ID_SECUNDARIO])
         return
 
-    # Mensagens separadas
-    message_prazo_solicitado = "<b>⚠️ Tarefas com status 'Prazo Solicitado':</b>\n\n"
-    message_outras = "<b>Tarefas para hoje:</b>\n\n"
+    prazo_solicitado_tasks = []
+    demais_tasks = []
 
     for task in tasks:
-        title = task.get("title") or "Sem título"
-
-        assignments = task.get("assignments") or []
-        if assignments:
-            responsible_names = ", ".join([a.get("assignee_name", "Desconhecido") for a in assignments])
+        if task.get("task_status_name") == "Prazo Solicitado":
+            prazo_solicitado_tasks.append(task)
         else:
-            responsible_names = task.get("responsible_name") or task.get("user_name") or "Desconhecido"
+            demais_tasks.append(task)
 
+    def format_task(task):
+        title = task.get("title") or "Sem título"
+        assignments = task.get("assignments") or []
+        responsible_names = ", ".join([a.get("assignee_name", "Desconhecido") for a in assignments]) if assignments else (
+            task.get("responsible_name") or task.get("user_name") or "Desconhecido")
         project_name = task.get("project_name") or "Projeto não identificado"
         task_id = task.get("id")
         task_url = f"https://runrun.it/tasks/{task_id}" if task_id else "URL indisponível"
         status = task.get("task_status_name", "Status desconhecido")
 
-        task_text = (
+        return (
             f"📌 <b>{title}</b>\n"
             f"👤 Responsável: {responsible_names}\n"
             f"📂 Projeto: {project_name}\n"
@@ -155,21 +138,19 @@ def main():
             f"🔗 <a href=\"{task_url}\">Abrir tarefa</a>\n\n"
         )
 
-        if status.strip().lower() == "prazo solicitado":
-            message_prazo_solicitado += task_text
-        else:
-            message_outras += task_text
+    message = "<b>Tarefas para hoje:</b>\n\n"
 
-    # Concatena as mensagens apenas se houver conteúdo além do título
-    final_message = ""
-    if message_prazo_solicitado.strip() != "<b>⚠️ Tarefas com status 'Prazo Solicitado':</b>":
-        final_message += message_prazo_solicitado
-    if message_outras.strip() != "<b>Tarefas para hoje:</b>":
-        if final_message:
-            final_message += "\n"
-        final_message += message_outras
+    if prazo_solicitado_tasks:
+        message += "<b>⚠️ Tarefas com status 'Prazo Solicitado':</b>\n\n"
+        for task in prazo_solicitado_tasks:
+            message += format_task(task)
 
-    split_and_send_message(final_message.strip(), chat_ids=[CHAT_ID, CHAT_ID_SECUNDARIO])
+    if demais_tasks:
+        message += "<b>📋 Demais tarefas:</b>\n\n"
+        for task in demais_tasks:
+            message += format_task(task)
+
+    split_and_send_message(message, chat_ids=[CHAT_ID, CHAT_ID_SECUNDARIO])
 
 if __name__ == "__main__":
     if not all([APP_KEY, USER_TOKEN, BOT_TOKEN, CHAT_ID, CHAT_ID_SECUNDARIO]):
