@@ -69,29 +69,26 @@ def get_all_tasks():
 
 def get_today_tasks():
     brt = pytz.timezone("America/Sao_Paulo")
-    today_brt = datetime.now(brt).date()
+    now_brt = datetime.now(tz=brt)
+    today = now_brt.replace(hour=0, minute=0, second=0, microsecond=0)
+    tomorrow = today + timedelta(days=1)
 
     all_tasks = get_all_tasks()
     print(f"Total tarefas obtidas: {len(all_tasks)}")
 
     filtered_tasks = []
     for task in all_tasks:
-        desired_date_str = task.get("desired_date_with_time")  # Usando o campo com hora
+        desired_date_str = task.get("desired_date_with_time")
         if not desired_date_str:
             continue
         desired_date = parse_iso_datetime(desired_date_str)
         if not desired_date:
             continue
-
-        desired_date_brt = desired_date.astimezone(brt).date()
-
-        # Debug para conferir datas
-        # print(f"Tarefa: {task.get('title', '')} - Desired Date UTC: {desired_date} - Desired Date BRT: {desired_date_brt} - Hoje BRT: {today_brt}")
-
-        if desired_date_brt == today_brt and task.get("status") != "delivered":
+        desired_date_brt = desired_date.astimezone(brt)
+        if today <= desired_date_brt < tomorrow and task.get("status") != "delivered":
             filtered_tasks.append(task)
 
-    print(f"Total tarefas filtradas para hoje (BRT): {len(filtered_tasks)}")
+    print(f"Total tarefas filtradas para hoje: {len(filtered_tasks)}")
     return filtered_tasks
 
 def send_to_telegram(message, chat_ids=None):
@@ -124,6 +121,9 @@ def split_and_send_message(full_message, max_length=4096, chat_ids=None):
 def main():
     user_dict = get_users()
     tasks = get_today_tasks()
+
+    # Ordena as tasks pelo nome do projeto (project_name), tratando casos sem projeto como string vazia
+    tasks.sort(key=lambda t: t.get("project_name") or "")
 
     if not tasks:
         send_to_telegram("✅ Nenhuma tarefa agendada para hoje.", chat_ids=[CHAT_ID, CHAT_ID_SECUNDARIO])
