@@ -1,42 +1,153 @@
-def main():
-    # Obtém o dicionário de usuários (id -> nome)
-    user_dict = get_users()
+import requests
+import os
+from datetime import datetime, timedelta
+import pytz  # IMPORTANTE: pip install pytz
 
-    # Recupera todas as tarefas com desired_date para hoje
+APP_KEY = os.getenv("RUNRUN_APP_KEY")
+USER_TOKEN = os.getenv("RUNRUN_USER_TOKEN")
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+CHAT_ID_SECUNDARIO = os.getenv("TELEGRAM_CHAT_ID_SECUNDARIO")
+
+HEADERS = {
+    "App-Key": APP_KEY,
+    "User-Token": USER_TOKEN,
+    "Content-Type": "application/json"
+}
+
+def get_users():
+    url = "https://runrun.it/api/v1.0/users"
+    response = requests.get(url, headers=HEADERS)
+    if response.status_code != 200:
+        print("Erro ao buscar usuários:", response.text)
+        return {}
+
+    users_data = response.json()
+    if isinstance(users_data, dict):
+        users = users_data.get("data", [])
+    else:
+        users = users_data
+
+    return {user["id"]: user["name"] for user in users}
+
+def parse_iso_datetime(date_str):
+    try:
+        dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=pytz.UTC)
+        else:
+            dt = dt.astimezone(pytz.UTC)
+        return dt
+    except Exception:
+        return None
+
+def get_all_tasks():
+    tasks = []
+    page = 1
+    per_page = 50
+
+    while True:
+        url = f"https://runrun.it/api/v1.0/tasks?page={page}&per_page={per_page}"
+        response = requests.get(url, headers=HEADERS)
+        if response.status_code != 200:
+            print(f"Erro ao buscar tarefas na página {page}:", response.text)
+            break
+
+        tasks_data = response.json()
+        if isinstance(tasks_data, dict):
+            data = tasks_data.get("data", [])
+        else:
+            data = tasks_data
+
+        if not data:
+            break
+
+        tasks.extend(data)
+        page += 1
+
+    return tasks
+
+def get_today_tasks():
+    brt = pytz.timezone("America/Sao_Paulo")
+    now_brt = datetime.now(tz=brt)
+    today = now_brt.replace(hour=0, minute=0, second=0, microsecond=0)
+    tomorrow = today + timedelta(days=1)
+
+    all_tasks = get_all_tasks()
+    print(f"Total tarefas obtidas: {len(all_tasks)}")
+
+    filtered_tasks = []
+    for task in all_tasks:
+        desired_date_str = task.get("desired_date_with_time")
+        if not desired_date_str:
+            continue
+        desired_date = parse_iso_datetime(desired_date_str)
+        if not desired_date:
+            continue
+        desired_date_brt = desired_date.astimezone(brt)
+        if today <= desired_date_brt < tomorrow and task.get("task_status_name", "").lower() != "delivered":
+            filtered_tasks.append(task)
+
+    print(f"Total tarefas filtradas para hoje: {len(filtered_tasks)}")
+    return filtered_tasks
+
+def send_to_telegram(message, chat_ids=None):
+    if chat_ids is None:
+        chat_ids = [CHAT_ID]
+    elif isinstance(chat_ids, str):
+        chat_ids = [chat_ids]
+
+    for chat_id in chat_ids:
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+        payload = {
+            "chat_id": chat_id,
+            "text": message,
+            "parse_mode": "HTML"
+        }
+        response = requests.post(url, json=payload)
+        if response.status_code != 200:
+            print(f"Erro ao enviar mensagem para o Telegram (chat_id: {chat_id}):", response.text)
+
+def split_and_send_message(full_message, max_length=4096, chat_ids=None):
+    while len(full_message) > max_length:
+        split_point = full_message.rfind('\n', 0, max_length)
+        if split_point == -1:
+            split_point = max_length
+        send_to_telegram(full_message[:split_point], chat_ids=chat_ids)
+        full_message = full_message[split_point:].lstrip()
+    if full_message:
+        send_to_telegram(full_message, chat_ids=chat_ids)
+
+def main():
+    user_dict = get_users()
     tasks = get_today_tasks()
 
-    # Ordena as tarefas por nome do projeto (para organização visual)
+    # Ordena as tasks pelo nome do projeto (project_name), tratando casos sem projeto como string vazia
     tasks.sort(key=lambda t: t.get("project_name") or "")
 
-    # Se não houver tarefas para hoje, envia uma mensagem informando isso
     if not tasks:
         send_to_telegram("✅ Nenhuma tarefa agendada para hoje.", chat_ids=[CHAT_ID, CHAT_ID_SECUNDARIO])
         return
 
-    # Inicializa os blocos de mensagem
-    # Um para tarefas com status "Prazo Solicitado" e outro para as demais
-    message_prazo_solicitado = "<b>⚠️ Tarefas com 'Prazo Solicitado':</b>\n\n"
-    message_outras = "<b>📋 Outras tarefas para hoje:</b>\n\n"
+    # Mensagens separadas
+    message_prazo_solicitado = "<b>⚠️ Tarefas com status 'Prazo Solicitado':</b>\n\n"
+    message_outras = "<b>Tarefas para hoje:</b>\n\n"
 
-    # Itera por todas as tarefas filtradas
     for task in tasks:
         title = task.get("title") or "Sem título"
 
-        # Define o(s) responsável(is) pela tarefa
         assignments = task.get("assignments") or []
         if assignments:
             responsible_names = ", ".join([a.get("assignee_name", "Desconhecido") for a in assignments])
         else:
             responsible_names = task.get("responsible_name") or task.get("user_name") or "Desconhecido"
 
-        # Informações adicionais da tarefa
         project_name = task.get("project_name") or "Projeto não identificado"
         task_id = task.get("id")
         task_url = f"https://runrun.it/tasks/{task_id}" if task_id else "URL indisponível"
         status = task.get("task_status_name", "Status desconhecido")
 
-        # Monta o bloco de texto HTML para a tarefa
-        task_block = (
+        task_text = (
             f"📌 <b>{title}</b>\n"
             f"👤 Responsável: {responsible_names}\n"
             f"📂 Projeto: {project_name}\n"
@@ -44,20 +155,23 @@ def main():
             f"🔗 <a href=\"{task_url}\">Abrir tarefa</a>\n\n"
         )
 
-        # Direciona para o grupo correto dependendo do status
-        if status.lower() == "prazo solicitado":
-            message_prazo_solicitado += task_block
+        if status.strip().lower() == "prazo solicitado":
+            message_prazo_solicitado += task_text
         else:
-            message_outras += task_block
+            message_outras += task_text
 
-    # Junta os blocos em uma única mensagem, com separação clara
-    full_message = ""
-    if message_prazo_solicitado.strip() != "<b>⚠️ Tarefas com 'Prazo Solicitado':</b>":
-        full_message += message_prazo_solicitado
-    if message_outras.strip() != "<b>📋 Outras tarefas para hoje:</b>":
-        if full_message:
-            full_message += "\n"  # separador visual entre os blocos
-        full_message += message_outras
+    # Concatena as mensagens apenas se houver conteúdo além do título
+    final_message = ""
+    if message_prazo_solicitado.strip() != "<b>⚠️ Tarefas com status 'Prazo Solicitado':</b>":
+        final_message += message_prazo_solicitado
+    if message_outras.strip() != "<b>Tarefas para hoje:</b>":
+        if final_message:
+            final_message += "\n"
+        final_message += message_outras
 
-    # Envia a mensagem final para os chats configurados, dividindo caso ultrapasse o limite do Telegram
-    split_and_send_message(full_message.strip(), chat_ids=[CHAT_ID, CHAT_ID_SECUNDARIO])
+    split_and_send_message(final_message.strip(), chat_ids=[CHAT_ID, CHAT_ID_SECUNDARIO])
+
+if __name__ == "__main__":
+    if not all([APP_KEY, USER_TOKEN, BOT_TOKEN, CHAT_ID, CHAT_ID_SECUNDARIO]):
+        raise Exception("⚠️ Variável de ambiente faltando.")
+    main()
