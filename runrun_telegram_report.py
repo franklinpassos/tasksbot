@@ -1,7 +1,8 @@
 import requests
 import os
 from datetime import datetime, timedelta
-import pytz  # IMPORTANTE: pip install pytz
+import pytz
+import time
 
 APP_KEY = os.getenv("RUNRUN_APP_KEY")
 USER_TOKEN = os.getenv("RUNRUN_USER_TOKEN")
@@ -29,35 +30,61 @@ def parse_iso_datetime(date_str):
     try:
         dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
         return dt.astimezone(pytz.UTC) if dt.tzinfo else dt.replace(tzinfo=pytz.UTC)
-    except Exception:
+    except Exception as e:
+        print(f"Erro ao converter data '{date_str}': {e}")
         return None
 
-def get_all_tasks():
+def get_all_tasks(max_pages=50, per_page=20, max_retries=3):
     tasks = []
     page = 1
-    per_page = 50
-    while True:
-        url = f"https://runrun.it/api/v1.0/tasks?page={page}&per_page={per_page}"
-        response = requests.get(url, headers=HEADERS)
-        if response.status_code != 200:
-            print(f"Erro ao buscar tarefas na página {page}:", response.text)
-            break
-        tasks_data = response.json()
-        data = tasks_data.get("data", tasks_data) if isinstance(tasks_data, dict) else tasks_data
-        if not data:
-            break
-        tasks.extend(data)
-        page += 1
-    return tasks
+    falhou_em_alguma_pagina = False
 
-def get_today_tasks():
+    while page <= max_pages:
+        url = f"https://runrun.it/api/v1.0/tasks?page={page}&per_page={per_page}"
+
+        for attempt in range(max_retries):
+            try:
+                response = requests.get(url, headers=HEADERS, timeout=15)
+                if response.status_code == 200:
+                    break
+                else:
+                    print(f"[Página {page}] Tentativa {attempt + 1}/{max_retries} falhou - HTTP {response.status_code}: {response.text}")
+            except requests.exceptions.Timeout:
+                print(f"[Página {page}] Tentativa {attempt + 1}/{max_retries} falhou por timeout.")
+            except requests.exceptions.RequestException as e:
+                print(f"[Página {page}] Tentativa {attempt + 1}/{max_retries} falhou por erro de conexão: {e}")
+            time.sleep(2 * (attempt + 1))
+
+        else:
+            print(f"❌ Falha ao obter dados da página {page} após {max_retries} tentativas.")
+            falhou_em_alguma_pagina = True
+            break
+
+        try:
+            tasks_data = response.json()
+            data = tasks_data.get("data", tasks_data) if isinstance(tasks_data, dict) else tasks_data
+            if not data:
+                print(f"[Página {page}] Nenhuma tarefa retornada.")
+                break
+            tasks.extend(data)
+            print(f"[Página {page}] {len(data)} tarefas adicionadas. Total acumulado: {len(tasks)}")
+        except Exception as e:
+            print(f"⚠️ Erro ao processar JSON da página {page}: {e}")
+            falhou_em_alguma_pagina = True
+            break
+
+        page += 1
+
+    return tasks, falhou_em_alguma_pagina
+
+def get_today_tasks_with_warning():
+    all_tasks, falhou = get_all_tasks()
+    print(f"Total tarefas obtidas: {len(all_tasks)}")
+
     brt = pytz.timezone("America/Sao_Paulo")
     now_brt = datetime.now(tz=brt)
     today = now_brt.replace(hour=0, minute=0, second=0, microsecond=0)
     tomorrow = today + timedelta(days=1)
-
-    all_tasks = get_all_tasks()
-    print(f"Total tarefas obtidas: {len(all_tasks)}")
 
     filtered_tasks = []
     for task in all_tasks:
@@ -72,7 +99,7 @@ def get_today_tasks():
             filtered_tasks.append(task)
 
     print(f"Total tarefas filtradas para hoje: {len(filtered_tasks)}")
-    return filtered_tasks
+    return filtered_tasks, falhou
 
 def send_to_telegram(message, chat_ids=None):
     if chat_ids is None:
@@ -122,11 +149,14 @@ def format_task_message(task):
 
 def main():
     user_dict = get_users()
-    tasks = get_today_tasks()
+    tasks, falhou = get_today_tasks_with_warning()
     tasks.sort(key=lambda t: t.get("project_name") or "")
 
     if not tasks:
-        send_to_telegram("✅ Nenhuma tarefa agendada para hoje.", chat_ids=[CHAT_ID, CHAT_ID_SECUNDARIO])
+        msg = "✅ Nenhuma tarefa agendada para hoje."
+        if falhou:
+            msg += "\n⚠️ Aviso: Nem todas as tarefas foram carregadas com sucesso devido a erro de comunicação com o Runrun.it."
+        send_to_telegram(msg, chat_ids=[CHAT_ID, CHAT_ID_SECUNDARIO])
         return
 
     solicitado_tasks = [t for t in tasks if "prazo solicitado" in t.get("task_status_name", "").lower()]
@@ -143,6 +173,9 @@ def main():
         message += "<b>📋 Outras tarefas:</b>\n\n"
         for task in outras_tasks:
             message += format_task_message(task)
+
+    if falhou:
+        message += "\n⚠️ <b>Atenção:</b> nem todas as tarefas foram carregadas com sucesso devido a um erro de comunicação com a API do Runrun.it."
 
     split_and_send_message(message.strip(), chat_ids=[CHAT_ID, CHAT_ID_SECUNDARIO])
     print(f"Total tarefas incluídas na mensagem: {len(solicitado_tasks) + len(outras_tasks)}")
