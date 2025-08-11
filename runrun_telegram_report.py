@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import pytz
 import time
 import unicodedata
+from collections import defaultdict
 
 APP_KEY = os.getenv("RUNRUN_APP_KEY")
 USER_TOKEN = os.getenv("RUNRUN_USER_TOKEN")
@@ -17,8 +18,7 @@ HEADERS = {
     "Content-Type": "application/json"
 }
 
-# === NOVO: Mapa de líderes por auditor (fácil de editar) ===
-# Basta incluir/alterar linhas abaixo. As chaves podem ter acentos; a normalização cuida do resto.
+# === Mapa de líderes por auditor (fácil de editar) ===
 LEADER_MAP = {
     "Lara Silveira": ["@SilvaniaAuditoria"],
     "João Gouveia": ["@SilvaniaAuditoria"],
@@ -102,12 +102,10 @@ LEADER_MAP = {
 DEFAULT_LEADERS = ["@BrunoAuditoria", "@FranklinAuditoria"]  # fallback
 
 def _normalize(s: str) -> str:
-    """normaliza para comparação: minúsculo, sem acentos, sem espaços extras"""
     s = unicodedata.normalize("NFKD", s or "")
     s = "".join(ch for ch in s if not unicodedata.combining(ch))
     return " ".join(s.lower().split())
 
-# Pré-indexa o mapa com nomes normalizados (permite escrever as chaves com acento acima).
 LEADER_MAP_NORM = { _normalize(k): v[:] for k, v in LEADER_MAP.items() }
 
 def get_users():
@@ -223,12 +221,8 @@ def split_and_send_message(full_message, max_length=4096, chat_ids=None):
     if full_message:
         send_to_telegram(full_message, chat_ids=chat_ids)
 
-# === NOVO: Resolve @líder(es) a partir dos responsáveis da task ===
+# === Helper: resolve @líder(es) a partir dos responsáveis ===
 def resolve_leader_tags(responsible_names: str) -> str:
-    """
-    Recebe string 'nome1, nome2' e retorna '@Lider1 @Lider2' (sem duplicatas).
-    Se nenhum nome for encontrado no LEADER_MAP, retorna fallback DEFAULT_LEADERS.
-    """
     found = []
     for raw in (responsible_names or "").split(","):
         name = raw.strip()
@@ -243,17 +237,19 @@ def resolve_leader_tags(responsible_names: str) -> str:
         found = DEFAULT_LEADERS[:]
     return " ".join(found)
 
+def get_responsible_names(task) -> str:
+    assignments = task.get("assignments") or []
+    return ", ".join([a.get("assignee_name", "Desconhecido") for a in assignments]) if assignments else (
+        task.get("responsible_name") or task.get("user_name") or "Desconhecido"
+    )
+
 def format_task_message(task):
     title = task.get("title") or "Sem título"
-    assignments = task.get("assignments") or []
-    responsible_names = ", ".join([a.get("assignee_name", "Desconhecido") for a in assignments]) if assignments else (
-        task.get("responsible_name") or task.get("user_name") or "Desconhecido")
+    responsible_names = get_responsible_names(task)
     project_name = task.get("project_name") or "Projeto não identificado"
     task_id = task.get("id")
     task_url = f"https://runrun.it/tasks/{task_id}" if task_id else "URL indisponível"
     status = task.get("task_status_name", "Status desconhecido")
-
-    # === NOVO: inclui os @líderes na mensagem ===
     leader_tags = resolve_leader_tags(responsible_names)
 
     return (
@@ -265,8 +261,31 @@ def format_task_message(task):
         f"🔗 <a href=\"{task_url}\">Abrir tarefa</a>\n\n"
     )
 
+# === Agrupamento por líder dentro de cada seção ===
+def group_by_leader(task_list):
+    grupos = defaultdict(list)
+    for t in task_list:
+        responsible = get_responsible_names(t)
+        leaders_str = resolve_leader_tags(responsible)
+        leaders = leaders_str.split() or DEFAULT_LEADERS
+        for tag in leaders:
+            grupos[tag].append(t)
+    # ordena por nome do líder
+    return dict(sorted(grupos.items(), key=lambda x: x[0].lower()))
+
+def render_grouped_section(titulo, tasks):
+    if not tasks:
+        return ""
+    out = [f"<b>{titulo}</b>\n"]
+    grupos = group_by_leader(tasks)
+    for lider, itens in grupos.items():
+        out.append(f"<b>👑 {lider}</b>\n")
+        for t in itens:
+            out.append(format_task_message(t))
+    return "\n".join(out)
+
 def main():
-    _ = get_users()  # mantido, caso queira usar no futuro; não altera funcionalidades
+    _ = get_users()  # mantido (sem impacto no fluxo atual)
     tasks, falhou = get_today_tasks_with_warning()
     tasks.sort(key=lambda t: t.get("project_name") or "")
 
@@ -281,16 +300,10 @@ def main():
     outras_tasks = [t for t in tasks if t not in solicitado_tasks]
 
     message = "<b>Tarefas para hoje:</b>\n\n"
-
-    if solicitado_tasks:
-        message += "<b>⏳ Tarefas com Prazo Solicitado:</b>\n\n"
-        for task in solicitado_tasks:
-            message += format_task_message(task)
-
-    if outras_tasks:
-        message += "<b>📋 Outras tarefas:</b>\n\n"
-        for task in outras_tasks:
-            message += format_task_message(task)
+    message += render_grouped_section("⏳ Tarefas com Prazo Solicitado:", solicitado_tasks)
+    if solicitado_tasks and outras_tasks:
+        message += "\n"
+    message += render_grouped_section("📋 Outras tarefas:", outras_tasks)
 
     if falhou:
         message += "\n⚠️ <b>Atenção:</b> nem todas as tarefas foram carregadas com sucesso devido a um erro de comunicação com a API do Runrun.it."
