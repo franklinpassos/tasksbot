@@ -27,5 +27,6 @@ jobs:
           RUNRUN_USER_TOKEN: ${{ secrets.RUNRUN_USER_TOKEN }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          TELEGRAM_CHAT_ID_SECUNDARIO: ${{ secrets.TELEGRAM_CHAT_ID_SECUNDARIO }}
+          TELEGRAM_CHAT_ID_RUNRUN: ${{ secrets.TELEGRAM_CHAT_ID_RUNRUN }}
+          TELEGRAM_THREAD_ID_RUNRUN: ${{ secrets.TELEGRAM_THREAD_ID_RUNRUN }}
         run: python runrun_telegram_report.py
