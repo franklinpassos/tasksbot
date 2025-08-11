@@ -9,8 +9,10 @@ from collections import defaultdict
 APP_KEY = os.getenv("RUNRUN_APP_KEY")
 USER_TOKEN = os.getenv("RUNRUN_USER_TOKEN")
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-CHAT_ID_SECUNDARIO = os.getenv("TELEGRAM_CHAT_ID_SECUNDARIO")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")  # principal (sem tópico)
+# === NOVO: chat/tópico do Runrun (secundário) ===
+CHAT_ID_RUNRUN = os.getenv("TELEGRAM_CHAT_ID_RUNRUN")          # ex.: -555
+THREAD_ID_RUNRUN = os.getenv("TELEGRAM_THREAD_ID_RUNRUN")      # ex.: 4  (tópico)
 
 HEADERS = {
     "App-Key": APP_KEY,
@@ -107,6 +109,14 @@ def _normalize(s: str) -> str:
     return " ".join(s.lower().split())
 
 LEADER_MAP_NORM = { _normalize(k): v[:] for k, v in LEADER_MAP.items() }
+
+# === (Opcional) Mapa de tópico por chat: envia no tópico quando existir
+THREAD_MAP = {}
+if CHAT_ID_RUNRUN and THREAD_ID_RUNRUN:
+    try:
+        THREAD_MAP[CHAT_ID_RUNRUN] = int(THREAD_ID_RUNRUN)
+    except ValueError:
+        print("Aviso: TELEGRAM_THREAD_ID_RUNRUN não é número válido.")
 
 def get_users():
     url = "https://runrun.it/api/v1.0/users"
@@ -207,6 +217,11 @@ def send_to_telegram(message, chat_ids=None):
             "parse_mode": "HTML",
             "disable_web_page_preview": True
         }
+        # ➕ Se houver tópico configurado para este chat, envia no tópico
+        thread_id = THREAD_MAP.get(chat_id)
+        if thread_id:
+            payload["message_thread_id"] = thread_id
+
         response = requests.post(url, json=payload)
         if response.status_code != 200:
             print(f"Erro ao enviar mensagem para o Telegram (chat_id: {chat_id}):", response.text)
@@ -255,7 +270,7 @@ def format_task_message(task):
     return (
         f"📌 <b>{title}</b>\n"
         f"👤 Responsável: {responsible_names}\n"
-        f"⚠️ Líder: {leader_tags}\n"
+        f"🧭 Líder: {leader_tags}\n"
         f"📂 Projeto: {project_name}\n"
         f"⚙️ Status: {status}\n"
         f"🔗 <a href=\"{task_url}\">Abrir tarefa</a>\n\n"
@@ -293,7 +308,11 @@ def main():
         msg = "✅ Nenhuma tarefa agendada para hoje."
         if falhou:
             msg += "\n⚠️ Aviso: Nem todas as tarefas foram carregadas com sucesso devido a erro de comunicação com o Runrun.it."
-        send_to_telegram(msg, chat_ids=[CHAT_ID, CHAT_ID_SECUNDARIO])
+        # envia para principal e runrun (se existir)
+        destinos = [cid for cid in [CHAT_ID, CHAT_ID_RUNRUN] if cid]
+        if not destinos:
+            raise Exception("⚠️ Nenhum CHAT_ID configurado.")
+        send_to_telegram(msg, chat_ids=destinos)
         return
 
     solicitado_tasks = [t for t in tasks if "prazo solicitado" in t.get("task_status_name", "").lower()]
@@ -308,10 +327,14 @@ def main():
     if falhou:
         message += "\n⚠️ <b>Atenção:</b> nem todas as tarefas foram carregadas com sucesso devido a um erro de comunicação com a API do Runrun.it."
 
-    split_and_send_message(message.strip(), chat_ids=[CHAT_ID, CHAT_ID_SECUNDARIO])
+    destinos = [cid for cid in [CHAT_ID, CHAT_ID_RUNRUN] if cid]
+    if not destinos:
+        raise Exception("⚠️ Nenhum CHAT_ID configurado.")
+    split_and_send_message(message.strip(), chat_ids=destinos)
     print(f"Total tarefas incluídas na mensagem: {len(solicitado_tasks) + len(outras_tasks)}")
 
 if __name__ == "__main__":
-    if not all([APP_KEY, USER_TOKEN, BOT_TOKEN, CHAT_ID, CHAT_ID_SECUNDARIO]):
-        raise Exception("⚠️ Variável de ambiente faltando.")
+    if not all([APP_KEY, USER_TOKEN, BOT_TOKEN]):
+        raise Exception("⚠️ Variável de ambiente faltando (RUNRUN/TELEGRAM).")
+    # CHAT_ID pode faltar se você quiser usar só o RUNRUN, e vice-versa.
     main()
